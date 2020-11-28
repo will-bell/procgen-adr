@@ -1,0 +1,15 @@
+#!/bin/bash -l
+#$ -P ec523
+#$ -l h_rt=24:00:00   # Specify the hard time limit for the job
+# Request 4 CPUs
+#$ -pe omp 4 
+#$ -l gpus=1 
+#$ -l gpu_c=6.0
+#$ -m ea
+#$ -N myjob           # Give job a name
+#$ -j y               # Merge the error and output streams into a single file
+# Specify the output file name
+#$ -o log.qlog
+module load miniconda tensorflow
+conda activate ./procgenenv
+python -m baselines_adr.train --env_name dc_bossfight --num_train_envs 64 --n_training_steps 200000000 --log_dir ./
