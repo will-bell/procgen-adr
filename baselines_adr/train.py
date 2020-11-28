@@ -27,7 +27,7 @@ def train_fn(env_name: str,
              log_dir: str = None,
              is_test_worker: bool = False,
              comm=None,
-             save_interval: int = 0,
+             save_interval: int = 1000,
              log_interval: int = 10):
 
     # Get the default ADR config if none is provided
@@ -83,6 +83,7 @@ def train_fn(env_name: str,
     logger.info(f'experiment_dir: {experiment_dir}')
     logger.info(f'tunable_params_config_path: {tunable_params_config_path}')
     logger.info(f'log_dir: {log_dir}')
+    logger.info(f'save_interval: {save_interval}')
 
     n_steps = 256
     ent_coef = .01
@@ -145,6 +146,7 @@ def main():
     parser.add_argument('--n_training_steps', type=int, default=200000000)
     parser.add_argument('--test_worker_interval', type=int, default=0)
     parser.add_argument('--log_dir', type=str, default=None)
+    parser.add_argument('--save_interval', type=str, default=None)
 
     args = parser.parse_args()
 
@@ -163,7 +165,8 @@ def main():
         args.n_training_steps,
         is_test_worker=is_test_worker,
         comm=comm,
-        log_dir=args.log_dir)
+        log_dir=args.log_dir,
+        save_interval=args.save_interval)
 
 
 if __name__ == '__main__':
