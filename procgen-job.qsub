@@ -12,4 +12,4 @@
 #$ -o log.qlog
 module load miniconda tensorflow gcc/9.3.0
 conda activate ./procgenenv
-python -m baselines_adr.train --env_name dc_bossfight --n_train_envs 64 --n_training_steps 200000000 --log_dir ./
+python -m baselines_adr.train --env_name dc_bossfight --n_train_envs 64 --n_training_steps 200000000 --log_dir ./ --save_interval 1000
