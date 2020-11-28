@@ -144,7 +144,7 @@ def main():
     parser.add_argument('--n_train_envs', type=int, default=2)
     parser.add_argument('--n_training_steps', type=int, default=200000000)
     parser.add_argument('--test_worker_interval', type=int, default=0)
-    parser.add_argument('--log_dir', type=str)
+    parser.add_argument('--log_dir', type=str, default=None)
 
     args = parser.parse_args()
 
