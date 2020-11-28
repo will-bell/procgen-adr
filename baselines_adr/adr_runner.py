@@ -89,7 +89,7 @@ class ADRConfig:
 
     def __init__(self,
                  n_eval_trajectories: int = 10,
-                 max_buffer_size: int = 100,
+                 max_buffer_size: int = 25,
                  gamma: float = .999,
                  lmbda: float = .95,
                  performance_thresholds: Tuple[float, float] = (2.5, 6.),

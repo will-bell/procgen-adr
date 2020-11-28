@@ -1,3 +1,7 @@
+#Windows workaround to importing baselines_adr
+import os, sys
+sys.path.append(os.path.curdir)
+
 import argparse
 import pathlib
 
@@ -73,6 +77,13 @@ def train_fn(env_name: str,
         format_strs = ['csv', 'stdout'] if log_comm.Get_rank() == 0 else []
         logger.configure(comm=log_comm, dir=str(log_dir), format_strs=format_strs)
 
+    logger.info(f'env_name: {env_name}')
+    logger.info(f'num_train_envs: {num_train_envs}')
+    logger.info(f'n_training_steps: {n_training_steps}')
+    logger.info(f'experiment_dir: {experiment_dir}')
+    logger.info(f'tunable_params_config_path: {tunable_params_config_path}')
+    logger.info(f'log_dir: {log_dir}')
+
     n_steps = 256
     ent_coef = .01
     lr = 5e-4
@@ -131,8 +142,9 @@ def main():
     parser = argparse.ArgumentParser(description='Process procgen training arguments.')
     parser.add_argument('--env_name', type=str, default='dc_bossfight')
     parser.add_argument('--n_train_envs', type=int, default=2)
-    parser.add_argument('--n_training_steps', type=int, default=20_000_000)
+    parser.add_argument('--n_training_steps', type=int, default=200000000)
     parser.add_argument('--test_worker_interval', type=int, default=0)
+    parser.add_argument('--log_dir', type=str)
 
     args = parser.parse_args()
 
@@ -150,7 +162,8 @@ def main():
         args.n_train_envs,
         args.n_training_steps,
         is_test_worker=is_test_worker,
-        comm=comm)
+        comm=comm,
+        log_dir=args.log_dir)
 
 
 if __name__ == '__main__':
