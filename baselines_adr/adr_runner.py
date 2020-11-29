@@ -3,6 +3,7 @@ import random
 from typing import Union, List, Tuple, Optional, Dict
 
 import numpy as np
+import pandas as pd
 from baselines.common.vec_env import VecExtractDictObs, VecMonitor, VecNormalize
 from procgen import ProcgenEnv
 from procgen.domains import DomainConfig, BossfightDomainConfig
@@ -263,6 +264,11 @@ class ParameterRunner:
         # Get the mean of the returns for these trajectories and add them to the buffer.
         buffer.push_back(np.mean(mb_returns, axis=0).item())
 
+    def get_clip_boundaries(self):
+        return self._env_parameter.clip_lower_bound, self._env_parameter.clip_upper_bound
+
+    def get_values(self):
+        return self._env_parameter.lower_bound, self._env_parameter.upper_bound
 
 class ADRRunner:
     """
@@ -294,8 +300,13 @@ class ADRRunner:
         self._n_tunable_params = len(self._tunable_param_names)
 
         self._low_threshold, self._high_threshold = adr_config.performance_thresholds
+        
+        self.LOG_df = pd.DataFrame(columns=['prefix', 'param_name', 'selected_bound', 'performance', 'old_value', 
+                                            'new_value', 'other_bound_value','low_perf_thresh', 'high_perf_thresh', 
+                                            'min_clip', 'max_clip'])
 
     def run(self):
+        
         # Randomly select a parameter to boundary sample
         param_idx = random.randint(0, self._n_tunable_params - 1)
         param_name = self._tunable_param_names[param_idx]
@@ -305,14 +316,18 @@ class ADRRunner:
         # performance in the environment.
         param_runner = self._param_runners[param_name]
         info = param_runner.evaluate_performance()
-
+        old_value_low, old_value_upper = param_runner.get_values()
         # If we get something back, then the performance buffer for either the lower or upper boundary of the parameter
         # is filled. Update the parameter according to the set thresholds.
         if info:
             performance, lower = info
             new_value = None
+            selected_bound = None
             if lower:  # Updating the lower boundary according to set performance thresholds
                 prefix = 'min_'
+                selected_bound = 'lower'
+                old_value, other_value = old_value_low, old_value_upper
+
                 if performance >= self._high_threshold:
                     # TODO: Log change
                     new_value = param_runner.increase_lower_bound()
@@ -322,6 +337,9 @@ class ADRRunner:
 
             else:  # Updating the upper boundary according to set performance thresholds
                 prefix = 'max_'
+                selected_bound = 'upper'
+                old_value, other_value = old_value_upper, old_value_low
+
                 if performance >= self._high_threshold:
                     # TODO: Log change
                     new_value = param_runner.increase_upper_bound()
@@ -333,3 +351,10 @@ class ADRRunner:
             # we got a new value.
             if new_value is not None:
                 self._train_domain_config.update_parameters({prefix + param_name: new_value})
+            
+                min_clip, max_clip = param_runner.get_clip_boundaries()
+                temp_df = pd.DataFrame([prefix, param_name, performance, selected_bound, 
+                                        old_value, new_value, other_value, self._low_threshold, self._high_threshold,
+                                        min_clip, max_clip])
+                self.LOG_df = self.LOG_df.append(temp_df, sort=False)
+                self.LOG_df.to_csv('adr_log.csv', encoding='utf-8', index=False)
