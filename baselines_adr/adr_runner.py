@@ -301,9 +301,10 @@ class ADRRunner:
 
         self._low_threshold, self._high_threshold = adr_config.performance_thresholds
         
-        self.LOG_df = pd.DataFrame(columns=['prefix', 'param_name', 'selected_bound', 'performance', 'old_value', 
-                                            'new_value', 'other_bound_value','low_perf_thresh', 'high_perf_thresh', 
-                                            'min_clip', 'max_clip'])
+        self.list_changes = []
+        # self.LOG_df = pd.DataFrame(columns=['prefix', 'param_name', 'selected_bound', 'performance', 'old_value', 
+        #                                     'new_value', 'other_bound_value','low_perf_thresh', 'high_perf_thresh', 
+        #                                     'min_clip', 'max_clip'])
 
     def run(self):
         
@@ -353,11 +354,12 @@ class ADRRunner:
                 self._train_domain_config.update_parameters({prefix + param_name: new_value})
             
                 min_clip, max_clip = param_runner.get_clip_boundaries()
-                temp_df = pd.DataFrame([prefix, param_name, performance, selected_bound, 
+                self.list_changes.append([prefix, param_name, selected_bound, performance, 
                                         old_value, new_value, other_value, self._low_threshold, self._high_threshold,
-                                        min_clip, max_clip], 
+                                        min_clip, max_clip])
+                
+                log_df = pd.DataFrame(self.list_changes, 
                                        columns=['prefix', 'param_name', 'selected_bound', 'performance', 'old_value', 
                                             'new_value', 'other_bound_value','low_perf_thresh', 'high_perf_thresh', 
                                             'min_clip', 'max_clip'])
-                self.LOG_df = self.LOG_df.append(temp_df, sort=False, ignore_index=True)
-                self.LOG_df.to_csv('adr_log.csv', encoding='utf-8', index=False)
+                log_df.to_csv('adr_log.csv', encoding='utf-8', index=False)
