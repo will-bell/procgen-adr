@@ -88,8 +88,8 @@ class ADRConfig:
     use_gae: bool
 
     def __init__(self,
-                 n_eval_trajectories: int = 10,
-                 max_buffer_size: int = 25,
+                 n_eval_trajectories: int = 100,
+                 max_buffer_size: int = 10,
                  gamma: float = .999,
                  lmbda: float = .95,
                  performance_thresholds: Tuple[float, float] = (2.5, 6.),
