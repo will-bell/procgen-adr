@@ -1,7 +1,7 @@
 import pathlib
 import random
 from typing import Union, List, Tuple, Optional, Dict
-
+import uuid
 import numpy as np
 import pandas as pd
 from baselines.common.vec_env import VecExtractDictObs, VecMonitor, VecNormalize
@@ -301,6 +301,7 @@ class ADRRunner:
 
         self._low_threshold, self._high_threshold = adr_config.performance_thresholds
         
+        self.filename = f'adr_log_{str(uuid.uuid4())}.csv'
         self.list_changes = []
         # self.LOG_df = pd.DataFrame(columns=['prefix', 'param_name', 'selected_bound', 'performance', 'old_value', 
         #                                     'new_value', 'other_bound_value','low_perf_thresh', 'high_perf_thresh', 
@@ -362,4 +363,4 @@ class ADRRunner:
                                        columns=['prefix', 'param_name', 'selected_bound', 'performance', 'old_value', 
                                             'new_value', 'other_bound_value','low_perf_thresh', 'high_perf_thresh', 
                                             'min_clip', 'max_clip'])
-                log_df.to_csv('adr_log.csv', encoding='utf-8', index=False)
+                log_df.to_csv(self.filename, encoding='utf-8', index=False)
