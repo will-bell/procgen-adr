@@ -1,8 +1,8 @@
 #!/bin/bash -l
 #$ -P ec523
 #$ -l h_rt=48:00:00   # Specify the hard time limit for the job
-# Request 12 CPUs
-#$ -pe omp 12
+# Request 8 CPUs
+#$ -pe omp 8
 #$ -l gpus=1 
 #$ -l gpu_c=6.0
 #$ -m ea
