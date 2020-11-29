@@ -7,7 +7,7 @@ import pathlib
 
 import tensorflow.compat.v1 as tf
 from baselines import logger
-from baselines.common.models import build_impala_cnn
+from baselines.common.models import build_impala_cnn, cnn_lstm
 from baselines.common.mpi_util import setup_mpi_gpus
 from baselines.common.vec_env import VecExtractDictObs, VecMonitor, VecNormalize
 from mpi4py import MPI
@@ -28,7 +28,8 @@ def train_fn(env_name: str,
              is_test_worker: bool = False,
              comm=None,
              save_interval: int = 1000,
-             log_interval: int = 10):
+             log_interval: int = 10,
+             recur: bool = False):
 
     # Get the default ADR config if none is provided
     adr_config = ADRConfig() if adr_config is None else adr_config
@@ -115,6 +116,10 @@ def train_fn(env_name: str,
     def conv_fn(x):
         return build_impala_cnn(x, depths=[16, 32, 32], emb_size=256)
 
+    if recur:
+        logger.info("Using CNN LSTM")
+        conv_fn = cnn_lstm(nlstm=256, conv_fn=conv_fn)
+    
     logger.info('training')
     ppo2_adr.learn(
         conv_fn,
@@ -147,6 +152,7 @@ def main():
     parser.add_argument('--test_worker_interval', type=int, default=0)
     parser.add_argument('--log_dir', type=str, default=None)
     parser.add_argument('--save_interval', type=int, default=1000)
+    parser.add_argument('--recur', type=bool, default=False)
 
     args = parser.parse_args()
 
@@ -166,7 +172,8 @@ def main():
         is_test_worker=is_test_worker,
         comm=comm,
         log_dir=args.log_dir,
-        save_interval=args.save_interval)
+        save_interval=args.save_interval,
+        recur=args.recur)
 
 
 if __name__ == '__main__':
