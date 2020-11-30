@@ -171,7 +171,8 @@ def learn(network,
     tfirststart = time.perf_counter()
 
     nupdates = n_training_steps // nbatch
-    for update in range(1, nupdates+1):
+    update = 1
+    while update <= nupdates:
         # At the top of the training loop,
         run_adr = uniform(0., 1.) < .5
         if run_adr:
@@ -179,99 +180,102 @@ def learn(network,
             model.eval_model.load('tmp.ckpt')
             adr_runner.run()
 
-        assert nbatch % n_minibatches == 0
-        # Start timer
-        tstart = time.perf_counter()
-        frac = 1.0 - (update - 1.0) / nupdates
+        else:
+            assert nbatch % n_minibatches == 0
+            # Start timer
+            tstart = time.perf_counter()
+            frac = 1.0 - (update - 1.0) / nupdates
 
-        # Calculate the learning rate
-        lrnow = lr(frac)
+            # Calculate the learning rate
+            lrnow = lr(frac)
 
-        # Calculate the clip_range
-        clip_rangenow = clip_range(frac)
+            # Calculate the clip_range
+            clip_rangenow = clip_range(frac)
 
-        if update % log_interval == 0 and is_mpi_root:
-            logger.info('Stepping environment...')
+            if update % log_interval == 0 and is_mpi_root:
+                logger.info('Stepping environment...')
 
-        # Get minibatch and add to the information buffers
-        obs, returns, masks, actions, values, neglogpacs, states, epinfos = runner.run()
-        epinfobuf.extend(epinfos)
-        if eval_runner is not None:
-            eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_states, eval_epinfos \
-                = eval_runner.run()
-            if eval_epinfobuf is not None:
-                eval_epinfobuf.extend(eval_epinfos)
+            # Get minibatch and add to the information buffers
+            obs, returns, masks, actions, values, neglogpacs, states, epinfos = runner.run()
+            epinfobuf.extend(epinfos)
+            if eval_runner is not None:
+                eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_states, \
+                    eval_epinfos = eval_runner.run()
+                if eval_epinfobuf is not None:
+                    eval_epinfobuf.extend(eval_epinfos)
 
-        if update % log_interval == 0 and is_mpi_root:
-            logger.info('Done.')
+            if update % log_interval == 0 and is_mpi_root:
+                logger.info('Done.')
 
-        # Here what we're going to do is for each minibatch calculate the loss and append it.
-        mblossvals = []
-        if states is None:  # non-recurrent version
-            # Index of each element of batch_size
-            # Create the indices array
-            inds = np.arange(nbatch)
-            for _ in range(n_optepochs):
-                # Randomize the indexes
-                np.random.shuffle(inds)
-                # 0 to batch_size with batch_train_size step
-                for start in range(0, nbatch, nbatch_train):
-                    end = start + nbatch_train
-                    mbinds = inds[start:end]
-                    slices = (arr[mbinds] for arr in (obs, returns, masks, actions, values, neglogpacs))
-                    mblossvals.append(model.train(lrnow, clip_rangenow, *slices))
+            # Here what we're going to do is for each minibatch calculate the loss and append it.
+            mblossvals = []
+            if states is None:  # non-recurrent version
+                # Index of each element of batch_size
+                # Create the indices array
+                inds = np.arange(nbatch)
+                for _ in range(n_optepochs):
+                    # Randomize the indexes
+                    np.random.shuffle(inds)
+                    # 0 to batch_size with batch_train_size step
+                    for start in range(0, nbatch, nbatch_train):
+                        end = start + nbatch_train
+                        mbinds = inds[start:end]
+                        slices = (arr[mbinds] for arr in (obs, returns, masks, actions, values, neglogpacs))
+                        mblossvals.append(model.train(lrnow, clip_rangenow, *slices))
 
-        else:  # recurrent version
-            assert nenvs % n_minibatches == 0
-            envsperbatch = nenvs // n_minibatches
-            envinds = np.arange(nenvs)
-            flatinds = np.arange(nenvs * n_steps).reshape(nenvs, n_steps)
-            for _ in range(n_optepochs):
-                np.random.shuffle(envinds)
-                for start in range(0, nenvs, envsperbatch):
-                    end = start + envsperbatch
-                    mbenvinds = envinds[start:end]
-                    mbflatinds = flatinds[mbenvinds].ravel()
-                    slices = (arr[mbflatinds] for arr in (obs, returns, masks, actions, values, neglogpacs))
-                    mbstates = states[mbenvinds]
-                    mblossvals.append(model.train(lrnow, clip_rangenow, *slices, mbstates))
+            else:  # recurrent version
+                assert nenvs % n_minibatches == 0
+                envsperbatch = nenvs // n_minibatches
+                envinds = np.arange(nenvs)
+                flatinds = np.arange(nenvs * n_steps).reshape(nenvs, n_steps)
+                for _ in range(n_optepochs):
+                    np.random.shuffle(envinds)
+                    for start in range(0, nenvs, envsperbatch):
+                        end = start + envsperbatch
+                        mbenvinds = envinds[start:end]
+                        mbflatinds = flatinds[mbenvinds].ravel()
+                        slices = (arr[mbflatinds] for arr in (obs, returns, masks, actions, values, neglogpacs))
+                        mbstates = states[mbenvinds]
+                        mblossvals.append(model.train(lrnow, clip_rangenow, *slices, mbstates))
 
-        # Feedforward --> get losses --> update
-        lossvals = np.mean(mblossvals, axis=0)
+            # Feedforward --> get losses --> update
+            lossvals = np.mean(mblossvals, axis=0)
 
-        # End timer/
-        tnow = time.perf_counter()
+            # End timer/
+            tnow = time.perf_counter()
 
-        # Calculate the fps (frame per second)
-        fps = int(nbatch / (tnow - tstart))
+            # Calculate the fps (frame per second)
+            fps = int(nbatch / (tnow - tstart))
 
-        if update % log_interval == 0 or update == 1:
-            # Calculates if value function is a good predictor of the returns (ev > 1)
-            # or if it's just worse than predicting nothing (ev =< 0)
-            ev = explained_variance(values, returns)
-            logger.logkv("misc/serial_timesteps", update*n_steps)
-            logger.logkv("misc/nupdates", update)
-            logger.logkv("misc/total_timesteps", update*nbatch)
-            logger.logkv("fps", fps)
-            logger.logkv("misc/explained_variance", float(ev))
-            logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
-            logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
+            if update % log_interval == 0 or update == 1:
+                # Calculates if value function is a good predictor of the returns (ev > 1)
+                # or if it's just worse than predicting nothing (ev =< 0)
+                ev = explained_variance(values, returns)
+                logger.logkv("misc/serial_timesteps", update*n_steps)
+                logger.logkv("misc/nupdates", update)
+                logger.logkv("misc/total_timesteps", update*nbatch)
+                logger.logkv("fps", fps)
+                logger.logkv("misc/explained_variance", float(ev))
+                logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
+                logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
 
-            if eval_env is not None:
-                logger.logkv('eval_eprewmean', safemean([epinfo['r'] for epinfo in eval_epinfobuf]))
-                logger.logkv('eval_eplenmean', safemean([epinfo['l'] for epinfo in eval_epinfobuf]))
+                if eval_env is not None:
+                    logger.logkv('eval_eprewmean', safemean([epinfo['r'] for epinfo in eval_epinfobuf]))
+                    logger.logkv('eval_eplenmean', safemean([epinfo['l'] for epinfo in eval_epinfobuf]))
 
-            logger.logkv('misc/time_elapsed', tnow - tfirststart)
-            for (lossval, lossname) in zip(lossvals, model.loss_names):
-                logger.logkv('loss/' + lossname, lossval)
+                logger.logkv('misc/time_elapsed', tnow - tfirststart)
+                for (lossval, lossname) in zip(lossvals, model.loss_names):
+                    logger.logkv('loss/' + lossname, lossval)
 
-            logger.dumpkvs()
+                logger.dumpkvs()
 
-        if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir() and is_mpi_root:
-            checkdir = osp.join(logger.get_dir(), 'checkpoints')
-            os.makedirs(checkdir, exist_ok=True)
-            savepath = osp.join(checkdir, '%.9i.ckpt' % update)
-            print('Saving to', savepath)
-            model.save(savepath)
+            if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir() and is_mpi_root:
+                checkdir = osp.join(logger.get_dir(), 'checkpoints')
+                os.makedirs(checkdir, exist_ok=True)
+                savepath = osp.join(checkdir, '%.5i' % update)
+                print('Saving to', savepath)
+                model.save(savepath)
+
+            update += 1
 
     return model
