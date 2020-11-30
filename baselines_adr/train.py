@@ -7,7 +7,7 @@ import pathlib
 
 import tensorflow.compat.v1 as tf
 from baselines import logger
-from baselines.common.models import build_impala_cnn, cnn_lstm
+from baselines.common.models import build_impala_cnn, cnn_lstm, impala_cnn_lstm, cnn_lnlstm
 from baselines.common.mpi_util import setup_mpi_gpus
 from baselines.common.vec_env import VecExtractDictObs, VecMonitor, VecNormalize
 from mpi4py import MPI
@@ -106,6 +106,11 @@ def train_fn(env_name: str,
     training_env = VecMonitor(venv=training_env, filename=None, keep_buf=100)
     training_env = VecNormalize(venv=training_env, ob=False)
 
+    adr_env = ProcgenEnv(num_envs=1, env_name=env_name, domain_config_path=str(train_domain_config_path))
+    adr_env = VecExtractDictObs(adr_env, "rgb")
+    adr_env = VecMonitor(venv=adr_env, filename=None, keep_buf=100)
+    adr_env = VecNormalize(venv=adr_env, ob=False)
+
     logger.info("creating tf session")
     setup_mpi_gpus()
     config = tf.ConfigProto()
@@ -141,7 +146,8 @@ def train_fn(env_name: str,
         n_optepochs=ppo_epochs,
         clip_range=clip_range,
         mpi_rank_weight=mpi_rank_weight,
-        clip_vf=use_vf_clipping)
+        clip_vf=use_vf_clipping,
+        adr_env=adr_env)
 
 
 def main():

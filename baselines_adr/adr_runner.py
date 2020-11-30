@@ -158,7 +158,7 @@ class ParameterRunner:
         # Initialize the performance buffers
         self._upper_performance_buffer, self._lower_performance_buffer = PerformanceBuffer(), PerformanceBuffer()
 
-        self._states = model.initial_state
+        self._states = model.adr_initial_state
         self._obs = self._env.reset()
         self._dones = [False]
         self.hidden_state = None

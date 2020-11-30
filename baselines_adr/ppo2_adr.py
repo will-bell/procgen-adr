@@ -53,6 +53,7 @@ def learn(network,
           model_fn: ADRModel = None,
           mpi_rank_weight: int = 1,
           comm=None,
+          adr_env: VecEnv = None,
           **network_kwargs):
 
     """
@@ -125,6 +126,7 @@ def learn(network,
     n_training_steps = int(n_training_steps)
 
     policy = build_policy(training_env, network, **network_kwargs)
+    adr_policy = build_policy(adr_env, network, **network_kwargs)
 
     # Get the nb of env
     nenvs = training_env.num_envs
@@ -142,7 +144,7 @@ def learn(network,
     if model_fn is None:
         model_fn = ADRModel
 
-    model = model_fn(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
+    model = model_fn(policy=policy, eval_policy=adr_policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
                      nsteps=n_steps, ent_coef=ent_coef, vf_coef=vf_coef, max_grad_norm=max_grad_norm, comm=comm,
                      mpi_rank_weight=mpi_rank_weight)
 
@@ -173,6 +175,8 @@ def learn(network,
         # At the top of the training loop,
         run_adr = uniform(0., 1.) < .5
         if run_adr:
+            model.train_model.save('tmp.ckpt')
+            model.eval_model.load('tmp.ckpt')
             adr_runner.run()
 
         assert nbatch % n_minibatches == 0
