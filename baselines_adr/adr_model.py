@@ -25,7 +25,7 @@ class ADRModel(object):
     save/load():
     - Save load the model
     """
-    def __init__(self, *, policy, eval_policy, ob_space, ac_space, nbatch_act, nbatch_train, nsteps, ent_coef, vf_coef,
+    def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train, nsteps, ent_coef, vf_coef,
                  max_grad_norm, mpi_rank_weight=1, comm=None, microbatch_size=None):
 
         self.sess = sess = get_session()
@@ -45,7 +45,7 @@ class ADRModel(object):
                 train_model = policy(microbatch_size, nsteps, sess)
 
             # Eval model for ADR
-            eval_model = eval_policy(1, 1, sess)
+            eval_model = policy(1, 1, sess)
 
         # CREATE THE PLACEHOLDERS
         self.A = A = train_model.pdtype.sample_placeholder([None])
