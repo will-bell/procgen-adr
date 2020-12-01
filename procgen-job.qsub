@@ -9,7 +9,7 @@
 #$ -N myjob           # Give job a name
 #$ -j y               # Merge the error and output streams into a single file
 # Specify the output file name
-#$ -o log_recurr.qlog
+#$ -o log_adr.qlog
 module load miniconda tensorflow gcc/9.3.0 ffmpeg
 conda activate ../procgenenv
-python -m baselines_adr.train --env_name dc_bossfight --n_train_envs 64 --n_training_steps 200000000 --log_dir ./rucurr --save_interval 100 --recur True
+python -m baselines_adr.train --env_name dc_bossfight --n_train_envs 64 --n_training_steps 200000000 --log_dir ./recurr  --recur True
