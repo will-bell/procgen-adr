@@ -386,6 +386,7 @@ class ADRRunner:
 
 
                 self._train_domain_config.update_parameters({prefix + param_name: new_value})
+                self.save_adr_params()
                 
     def adr_entropy(self):
         """ Calculate ADR Entropy
@@ -402,3 +403,14 @@ class ADRRunner:
 
         entropy = np.mean(differences)
         return entropy
+    
+    def save_adr_params(self):
+        savepath = osp.join(logger.get_dir(), 'adr_params.csv')
+        l = []
+        for name, param_runner in self._param_runners.items():
+            phi_l, phi_h = param_runner.get_values()
+
+            l.append([name, phi_l, phi_h])
+        df = pd.DataFrame(l, 
+                        columns=['param_name', 'phi_l', 'phi_h'])
+        df.to_csv(savepath, encoding='utf-8', index=False)
