@@ -1,12 +1,14 @@
 import pathlib
 import random
 from typing import Union, List, Tuple, Optional, Dict
-import uuid
+import os
+import os.path as osp
 import numpy as np
 import pandas as pd
 from baselines.common.vec_env import VecExtractDictObs, VecMonitor, VecNormalize
 from procgen import ProcgenEnv
 from procgen.domains import DomainConfig, BossfightDomainConfig
+from baselines import logger
 
 Number = Union[int, float]
 
@@ -26,12 +28,13 @@ class EnvironmentParameter:
                  delta: Number, discrete: bool):
         self.name = name
         self.lower_bound, self.upper_bound = initial_bounds
+        self.initial_lower_bound, self.initial_upper_bound = initial_bounds
         self.clip_lower_bound, self.clip_upper_bound = clip_bounds
         self.discrete = discrete
         self.delta = delta
-
+        
     def increase_lower_bound(self):
-        self.lower_bound = min(self.lower_bound + self.delta, self.upper_bound)
+        self.lower_bound = min(self.lower_bound + self.delta, self.initial_lower_bound)
 
     def decrease_lower_bound(self):
         self.lower_bound = max(self.lower_bound - self.delta, self.clip_lower_bound)
@@ -40,7 +43,7 @@ class EnvironmentParameter:
         self.upper_bound = min(self.upper_bound + self.delta, self.clip_upper_bound)
 
     def decrease_upper_bound(self):
-        self.upper_bound = max(self.upper_bound - self.delta, self.lower_bound)
+        self.upper_bound = max(self.upper_bound - self.delta, self.initial_upper_bound)
 
 
 DEFAULT_TUNABLE_PARAMS = {
@@ -89,8 +92,8 @@ class ADRConfig:
     use_gae: bool
 
     def __init__(self,
-                 n_eval_trajectories: int = 100,
-                 max_buffer_size: int = 10,
+                 n_eval_trajectories: int = 10,
+                 max_buffer_size: int = 7,
                  gamma: float = .999,
                  lmbda: float = .95,
                  performance_thresholds: Tuple[float, float] = (2.5, 6.),
@@ -287,6 +290,7 @@ class ADRRunner:
     def __init__(self, model, initial_domain_config: DomainConfig, tunable_parameters: List[EnvironmentParameter],
                  adr_config: ADRConfig = None):
 
+        self.model = model
         self._train_domain_config = initial_domain_config
         train_config_path = initial_domain_config.path
 
@@ -301,13 +305,10 @@ class ADRRunner:
 
         self._low_threshold, self._high_threshold = adr_config.performance_thresholds
         
-        self.filename = f'adr_log_{str(uuid.uuid4())}.csv'
+        self.filename = f'adr_log.csv'
         self.list_changes = []
-        # self.LOG_df = pd.DataFrame(columns=['prefix', 'param_name', 'selected_bound', 'performance', 'old_value', 
-        #                                     'new_value', 'other_bound_value','low_perf_thresh', 'high_perf_thresh', 
-        #                                     'min_clip', 'max_clip'])
 
-    def run(self):
+    def run(self, update_iter):
         
         # Randomly select a parameter to boundary sample
         param_idx = random.randint(0, self._n_tunable_params - 1)
@@ -352,15 +353,47 @@ class ADRRunner:
             # Update the config for the training environment with the new value for the boundary-sampled parameter if
             # we got a new value.
             if new_value is not None:
-                self._train_domain_config.update_parameters({prefix + param_name: new_value})
-            
+                checkdir = osp.join(logger.get_dir(), 'checkpoints')
+                os.makedirs(checkdir, exist_ok=True)
+                savepath = osp.join(checkdir, '%.5i.ckpt' % update_iter)
+                print('Saving to', savepath)
+                self.model.save(savepath)
+                config_savepath = osp.join(checkdir, '%.5i.json' % update_iter)
+                self._train_domain_config.to_json(config_savepath)
+
+                logger.info(f"Saving model to {savepath}")
+                logger.info(f"Saving config to {config_savepath}")
+
+                entropy = self.adr_entropy()
+                logger.info(f"ADR Entropy to {entropy}")
+                
                 min_clip, max_clip = param_runner.get_clip_boundaries()
-                self.list_changes.append([prefix, param_name, selected_bound, performance, 
-                                        old_value, new_value, other_value, self._low_threshold, self._high_threshold,
+                self.list_changes.append([update_iter, prefix, param_name, selected_bound, performance, 
+                                        old_value, new_value, other_value, entropy, self._low_threshold, self._high_threshold,
                                         min_clip, max_clip])
                 
                 log_df = pd.DataFrame(self.list_changes, 
-                                       columns=['prefix', 'param_name', 'selected_bound', 'performance', 'old_value', 
-                                            'new_value', 'other_bound_value','low_perf_thresh', 'high_perf_thresh', 
+                                       columns=['update_iter', 'prefix', 'param_name', 'selected_bound', 'performance', 'old_value', 
+                                            'new_value', 'other_bound_value', 'adr_entropy', 'low_perf_thresh', 'high_perf_thresh', 
                                             'min_clip', 'max_clip'])
-                log_df.to_csv(self.filename, encoding='utf-8', index=False)
+                log_df_savepath = os.path.join(logger.get_dir(), self.filename)
+                log_df.to_csv(log_df_savepath, encoding='utf-8', index=False)
+
+
+                self._train_domain_config.update_parameters({prefix + param_name: new_value})
+                
+    def adr_entropy(self):
+        """ Calculate ADR Entropy
+
+        Returns:
+            float: entropy =  1/d \sum_{i=1}^{d} log(phi_ih - phi_il)
+        """
+
+        differences = []
+        for param_runner in self._param_runners.values():
+            phi_l, phi_h = param_runner.get_values()
+
+            differences.append(np.log(phi_h - phi_l))
+
+        entropy = np.mean(differences)
+        return entropy

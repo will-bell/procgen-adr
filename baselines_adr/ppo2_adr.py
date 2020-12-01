@@ -44,7 +44,7 @@ def learn(network,
           max_grad_norm: float = .5,
           gamma: float = .99,
           lmbda: float = .95,
-          log_interval: int = 10,
+          log_interval: int = 1,
           save_interval: int = 0,
           n_minibatches: int = 4,
           n_optepochs: int = 4,
@@ -174,7 +174,7 @@ def learn(network,
         # At the top of the training loop,
         run_adr = uniform(0., 1.) < .5
         if run_adr:
-            adr_runner.run()
+            adr_runner.run(update)
 
         else:
             assert nbatch % n_minibatches == 0
