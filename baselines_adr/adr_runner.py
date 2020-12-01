@@ -89,6 +89,8 @@ class ADRConfig:
 
     performance_thresholds: Tuple[float, float]
 
+    upper_sample_prob: float
+
     use_gae: bool
 
     def __init__(self,
@@ -97,6 +99,7 @@ class ADRConfig:
                  gamma: float = .999,
                  lmbda: float = .95,
                  performance_thresholds: Tuple[float, float] = (2.5, 6.),
+                 upper_sample_prob: float = .8,
                  use_gae: bool = True):
 
         self.n_eval_trajectories = n_eval_trajectories
@@ -104,6 +107,7 @@ class ADRConfig:
         self.gamma = gamma
         self.lmbda = lmbda
         self.performance_thresholds = performance_thresholds
+        self.upper_sample_prob = upper_sample_prob
         self.use_gae = use_gae
 
 
@@ -138,6 +142,7 @@ class ParameterRunner:
 
         self._max_buffer_size = adr_config.max_buffer_size
         self._n_trajectories = adr_config.n_eval_trajectories
+        self._upper_sample_prob = adr_config.upper_sample_prob
 
         self._train_config_path = pathlib.Path(train_config_path)
         config_dir = self._train_config_path.parent
@@ -177,14 +182,14 @@ class ParameterRunner:
         updated_params = updated_train_config.parameters
 
         x = random.uniform(0., 1.)
-        if x < .5:
-            lower = True
-            value = self._env_parameter.lower_bound
-            buffer = self._lower_performance_buffer
-        else:
+        if x < self._upper_sample_prob:
             lower = False
             value = self._env_parameter.upper_bound
             buffer = self._upper_performance_buffer
+        else:
+            lower = True
+            value = self._env_parameter.lower_bound
+            buffer = self._lower_performance_buffer
 
         updated_params['min_' + self._param_name] = value
         updated_params['max_' + self._param_name] = value
