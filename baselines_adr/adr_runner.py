@@ -7,13 +7,13 @@ import numpy as np
 import pandas as pd
 from baselines.common.vec_env import VecExtractDictObs, VecMonitor, VecNormalize
 from procgen import ProcgenEnv
-from procgen.domains import DomainConfig, BossfightDomainConfig
 from baselines import logger
+from procgen.domains import DomainConfig, BossfightHardConfig
 
 Number = Union[int, float]
 
 DEFAULT_DOMAIN_CONFIGS = {
-    'dc_bossfight': BossfightDomainConfig()
+    'dc_bossfight': BossfightHardConfig
 }
 
 
@@ -53,6 +53,8 @@ DEFAULT_TUNABLE_PARAMS = {
         EnvironmentParameter(name='boss_round_health', initial_bounds=(1, 1), clip_bounds=(1, 50), delta=1, discrete=True),
         EnvironmentParameter(name='boss_invulnerable_duration', initial_bounds=(1, 1), clip_bounds=(1, 10), delta=1, discrete=True),
         EnvironmentParameter(name='boss_bullet_velocity', initial_bounds=(.3, .3), clip_bounds=(.3, 1.), delta=.1, discrete=False),
+        EnvironmentParameter(name='boss_rand_fire_prob', initial_bounds=(.05, .05), clip_bounds=(.05, .5), delta=.05, discrete=False),
+        EnvironmentParameter(name='boss_scale', initial_bounds=(1., 1.), clip_bounds=(.5, 1.), delta=.1, discrete=False)
     ]
 }
 
