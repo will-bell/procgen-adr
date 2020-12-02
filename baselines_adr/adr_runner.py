@@ -48,11 +48,11 @@ class EnvironmentParameter:
 
 DEFAULT_TUNABLE_PARAMS = {
     'dc_bossfight': [
-        EnvironmentParameter(name='n_rounds', initial_bounds=(1, 1), clip_bounds=(1, 10), delta=1, discrete=True),
+        EnvironmentParameter(name='n_rounds', initial_bounds=(1, 1), clip_bounds=(1, 25), delta=1, discrete=True),
         EnvironmentParameter(name='n_barriers', initial_bounds=(1, 1), clip_bounds=(1, 5), delta=1, discrete=True),
-        EnvironmentParameter(name='boss_round_health', initial_bounds=(1, 1), clip_bounds=(1, 10), delta=1, discrete=True),
+        EnvironmentParameter(name='boss_round_health', initial_bounds=(1, 1), clip_bounds=(1, 50), delta=1, discrete=True),
         EnvironmentParameter(name='boss_invulnerable_duration', initial_bounds=(1, 1), clip_bounds=(1, 10), delta=1, discrete=True),
-        EnvironmentParameter(name='boss_bullet_velocity', initial_bounds=(.1, .1), clip_bounds=(.1, 1.), delta=.1, discrete=False),
+        EnvironmentParameter(name='boss_bullet_velocity', initial_bounds=(.3, .3), clip_bounds=(.3, 1.), delta=.1, discrete=False),
     ]
 }
 
