@@ -70,7 +70,7 @@ class TestRunner:
         # Here, we init the lists that will contain the mb of experiences
         mb_rewards, mb_values, mb_dones = [], [], []
         epinfos = []
-        states = None
+        states = self.model.adr_initial_state
 
         # For n in range number of steps
         n_completed = 0

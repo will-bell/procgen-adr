@@ -27,7 +27,7 @@ def train_fn(env_name: str,
              is_test_worker: bool = False,
              comm=None,
              save_interval: int = 1000,
-             log_interval: int = 10,
+             log_interval: int = 1,
              recur: bool = False):
 
     # Get the default ADR config if none is provided

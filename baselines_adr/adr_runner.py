@@ -9,11 +9,12 @@ from baselines.common.vec_env import VecExtractDictObs, VecMonitor, VecNormalize
 from procgen import ProcgenEnv
 from baselines import logger
 from procgen.domains import DomainConfig, BossfightHardConfig
+import copy
 
 Number = Union[int, float]
 
 DEFAULT_DOMAIN_CONFIGS = {
-    'dc_bossfight': BossfightHardConfig
+    'dc_bossfight': copy.copy(BossfightHardConfig)
 }
 
 
@@ -48,7 +49,6 @@ class EnvironmentParameter:
 
 DEFAULT_TUNABLE_PARAMS = {
     'dc_bossfight': [
-        EnvironmentParameter(name='n_rounds', initial_bounds=(1, 1), clip_bounds=(1, 25), delta=1, discrete=True),
         EnvironmentParameter(name='n_barriers', initial_bounds=(1, 1), clip_bounds=(1, 5), delta=1, discrete=True),
         EnvironmentParameter(name='boss_round_health', initial_bounds=(1, 1), clip_bounds=(1, 50), delta=1, discrete=True),
         EnvironmentParameter(name='boss_invulnerable_duration', initial_bounds=(1, 1), clip_bounds=(1, 10), delta=1, discrete=True),

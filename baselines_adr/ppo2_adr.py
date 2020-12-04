@@ -250,6 +250,8 @@ def learn(network,
             fps = int(nbatch / (tnow - tstart))
 
             if update % log_interval == 0 or update == 1:
+                ez_rew, hard_rew, full_rew = test_runner.run()
+
                 # Calculates if value function is a good predictor of the returns (ev > 1)
                 # or if it's just worse than predicting nothing (ev =< 0)
                 ev = explained_variance(values, returns)
@@ -258,8 +260,12 @@ def learn(network,
                 logger.logkv("misc/total_timesteps", update*nbatch)
                 logger.logkv("fps", fps)
                 logger.logkv("misc/explained_variance", float(ev))
-                logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
-                logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
+                logger.logkv('train_eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
+                logger.logkv('train_eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
+                logger.logkv('eprewmean_ez', ez_rew)
+                logger.logkv('eprewmean_hard', hard_rew)
+                logger.logkv('eprewmean_full', full_rew)
+
 
                 if eval_env is not None:
                     logger.logkv('eval_eprewmean', safemean([epinfo['r'] for epinfo in eval_epinfobuf]))
