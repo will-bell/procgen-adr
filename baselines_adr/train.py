@@ -1,5 +1,4 @@
-#Windows workaround to importing baselines_adr
-import os, sys
+import os, sys # Windows workaround to importing baselines_adr
 sys.path.append(os.path.curdir)
 
 import argparse
@@ -125,6 +124,7 @@ def train_fn(env_name: str,
         conv_fn,
         training_env,
         n_training_steps,
+        config_dir,
         adr_config,
         train_domain_config,
         tunable_params,

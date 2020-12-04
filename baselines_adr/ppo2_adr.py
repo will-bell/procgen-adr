@@ -1,5 +1,6 @@
 import os
 import os.path as osp
+import pathlib
 import time
 from collections import deque
 from random import uniform
@@ -16,6 +17,7 @@ from procgen.domains import DomainConfig
 
 from baselines_adr.adr_model import ADRModel
 from baselines_adr.adr_runner import ADRRunner, ADRConfig, EnvironmentParameter
+from baselines_adr.test_runner import TestRunner
 
 
 def constfn(val):
@@ -32,6 +34,7 @@ def safemean(xs):
 def learn(network,
           training_env: VecEnv,
           n_training_steps: int,
+          config_dir: pathlib.Path,
           adr_config: ADRConfig,
           train_domain_config: DomainConfig,
           tunable_parameters: List[EnvironmentParameter],
@@ -164,6 +167,9 @@ def learn(network,
 
     # Instantiate the runner object for the ADR algorithm
     adr_runner = ADRRunner(model, train_domain_config, tunable_parameters, adr_config)
+
+    # Instantiate the runner object for the test environments
+    test_runner = TestRunner(model, config_dir, adr_config.n_eval_trajectories, tunable_parameters)
 
     # Start total timer
     tfirststart = time.perf_counter()
