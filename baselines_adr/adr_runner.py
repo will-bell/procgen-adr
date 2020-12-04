@@ -100,7 +100,7 @@ class ADRConfig:
                  max_buffer_size: int = 7,
                  gamma: float = .999,
                  lmbda: float = .95,
-                 performance_thresholds: Tuple[float, float] = (2.5, 6.),
+                 performance_thresholds: Tuple[float, float] = (8., 10.),
                  upper_sample_prob: float = .8,
                  use_gae: bool = True):
 
@@ -111,6 +111,10 @@ class ADRConfig:
         self.performance_thresholds = performance_thresholds
         self.upper_sample_prob = upper_sample_prob
         self.use_gae = use_gae
+
+
+def safemean(xs: np.ndarray) -> float:
+    return np.nan if len(xs) == 0 else np.mean(xs).item()
 
 
 class ParameterRunner:
@@ -222,9 +226,8 @@ class ParameterRunner:
         return self._env_parameter.upper_bound
 
     def _generate_trajectories(self, buffer: PerformanceBuffer):
-        # Here, we init the lists that will contain the mb of experiences
-        mb_rewards, mb_values, mb_dones = [], [], []
-        epinfos = []
+        # Here, we init the list of rewards
+        mb_rewards = []
 
         # For n in range number of steps
         n_completed = 0
@@ -232,53 +235,27 @@ class ParameterRunner:
             # Given observations, get action value
             # We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
             actions, values, self._states, _ = self._model.adr_step(self._obs, S=self._states, M=self._dones)
-            mb_values.append(values)
-            mb_dones.append(self._dones)
 
             # Take actions in env and look the results
             # Info contains a ton of useful information
-            self._obs[:], rewards, self._dones, infos = self._env.step(actions)
-            for info in infos:
-                maybeepinfo = info.get('episode')
-                if maybeepinfo:
-                    epinfos.append(maybeepinfo)
+            self._obs[:], rewards, self._dones, _ = self._env.step(actions)
 
             mb_rewards.append(rewards)
 
             if self._dones[0]:
                 n_completed += 1
 
-        # batch of steps to batch of rollouts
-        mb_values = np.asarray(mb_values, dtype=np.float32)
-        mb_dones = np.asarray(mb_dones, dtype=np.bool)
-        last_values = self._model.adr_value(self._obs, S=self._states, M=self._dones)
-
-        # discount/bootstrap off value fn
-        mb_advs = np.zeros_like(mb_rewards)
-        lastgaelam = 0
-        n_steps = len(mb_dones)
-        for t in reversed(range(n_steps)):
-            if t == n_steps - 1:
-                nextnonterminal = 1.0 - self._dones
-                nextvalues = last_values
-
-            else:
-                nextnonterminal = 1.0 - mb_dones[t + 1]
-                nextvalues = mb_values[t + 1]
-
-            delta = mb_rewards[t] + self._gamma * nextvalues * nextnonterminal - mb_values[t]
-            mb_advs[t] = lastgaelam = delta + self._gamma * self._lambda * nextnonterminal * lastgaelam
-
-        mb_returns = mb_advs + mb_values
+        mb_rewards = np.array(mb_rewards)
 
         # Get the mean of the returns for these trajectories and add them to the buffer.
-        buffer.push_back(np.mean(mb_returns, axis=0).item())
+        buffer.push_back(safemean(mb_rewards))
 
     def get_clip_boundaries(self):
         return self._env_parameter.clip_lower_bound, self._env_parameter.clip_upper_bound
 
     def get_values(self):
         return self._env_parameter.lower_bound, self._env_parameter.upper_bound
+
 
 class ADRRunner:
     """
@@ -316,7 +293,6 @@ class ADRRunner:
         self.list_changes = []
 
     def run(self, update_iter):
-        
         # Randomly select a parameter to boundary sample
         param_idx = random.randint(0, self._n_tunable_params - 1)
         param_name = self._tunable_param_names[param_idx]
@@ -374,16 +350,26 @@ class ADRRunner:
                 
                 min_clip, max_clip = param_runner.get_clip_boundaries()
                 self.list_changes.append([update_iter, prefix, param_name, selected_bound, performance, 
-                                        old_value, new_value, other_value, entropy, self._low_threshold, self._high_threshold,
-                                        min_clip, max_clip])
+                                          old_value, new_value, other_value, entropy, self._low_threshold,
+                                          self._high_threshold, min_clip, max_clip])
                 
                 log_df = pd.DataFrame(self.list_changes, 
-                                       columns=['update_iter', 'prefix', 'param_name', 'selected_bound', 'performance', 'old_value', 
-                                            'new_value', 'other_bound_value', 'adr_entropy', 'low_perf_thresh', 'high_perf_thresh', 
-                                            'min_clip', 'max_clip'])
+                                      columns=[
+                                          'update_iter',
+                                          'prefix',
+                                          'param_name',
+                                          'selected_bound',
+                                          'performance',
+                                          'old_value',
+                                          'new_value',
+                                          'other_bound_value',
+                                          'adr_entropy',
+                                          'low_perf_thresh',
+                                          'high_perf_thresh',
+                                          'min_clip',
+                                          'max_clip'])
                 log_df_savepath = os.path.join(logger.get_dir(), self.filename)
                 log_df.to_csv(log_df_savepath, encoding='utf-8', index=False)
-
 
                 self._train_domain_config.update_parameters({prefix + param_name: new_value})
                 self.save_adr_params()
@@ -411,6 +397,5 @@ class ADRRunner:
             phi_l, phi_h = param_runner.get_values()
 
             l.append([name, phi_l, phi_h])
-        df = pd.DataFrame(l, 
-                        columns=['param_name', 'phi_l', 'phi_h'])
+        df = pd.DataFrame(l, columns=['param_name', 'phi_l', 'phi_h'])
         df.to_csv(savepath, encoding='utf-8', index=False)
