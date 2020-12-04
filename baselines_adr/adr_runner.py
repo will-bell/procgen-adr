@@ -337,23 +337,21 @@ class ADRRunner:
                 prefix = 'min_'
                 selected_bound = 'lower'
                 old_value, other_value = old_value_low, old_value_upper
-
-                if performance >= self._high_threshold:
-                    # TODO: Log change
-                    new_value = param_runner.increase_lower_bound()
-                elif performance <= self._low_threshold:
+                if performance >= self._high_threshold:   # Increase entropy
                     # TODO: Log change
                     new_value = param_runner.decrease_lower_bound()
+                elif performance <= self._low_threshold:  # Decrease entropy
+                    # TODO: Log change
+                    new_value = param_runner.increase_lower_bound()
 
             else:  # Updating the upper boundary according to set performance thresholds
                 prefix = 'max_'
                 selected_bound = 'upper'
                 old_value, other_value = old_value_upper, old_value_low
-
-                if performance >= self._high_threshold:
+                if performance >= self._high_threshold:   # Increase entropy
                     # TODO: Log change
                     new_value = param_runner.increase_upper_bound()
-                elif performance <= self._low_threshold:
+                elif performance <= self._low_threshold:  # Decrease entropy
                     # TODO: Log change
                     new_value = param_runner.decrease_upper_bound()
 
