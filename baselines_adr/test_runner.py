@@ -1,7 +1,6 @@
 import copy
 import pathlib
-from typing import List
-from collections import deque
+from typing import List, Tuple
 
 import numpy as np
 from baselines.common.vec_env import VecExtractDictObs, VecMonitor, VecNormalize
@@ -21,22 +20,18 @@ class TestRunner:
     run():
     - Make a mini batch
     """
-    def __init__(self, model, config_dir: pathlib.Path, n_trajectories: int, tunable_params: List[EnvironmentParameter], gamma, lam):
-        self.model = model
+    def __init__(self, model, config_dir: pathlib.Path, n_trajectories: int, tunable_params: List[EnvironmentParameter]):
+        self._model = model
         self._n_trajectories = n_trajectories
-        # Lambda used in GAE (General Advantage Estimation)
-        self.lam = lam
-        # Discount rate
-        self.gamma = gamma
 
         # Initialize the environment
-        ez_config_path = config_dir / 'test_easy_config.json'
-        ez_config = copy.copy(BossfightEasyConfig)
-        ez_config.to_json(ez_config_path)
-        ez_env = ProcgenEnv(num_envs=1, env_name=str(ez_config.game), domain_config_path=str(ez_config_path))
-        ez_env = VecExtractDictObs(ez_env, "rgb")
-        ez_env = VecMonitor(venv=ez_env, filename=None, keep_buf=100)
-        self.ez_env = VecNormalize(venv=ez_env, ob=False)
+        easy_config_path = config_dir / 'test_easy_config.json'
+        easy_config = copy.copy(BossfightEasyConfig)
+        easy_config.to_json(easy_config_path)
+        easy_env = ProcgenEnv(num_envs=1, env_name=str(easy_config.game), domain_config_path=str(easy_config_path))
+        easy_env = VecExtractDictObs(easy_env, "rgb")
+        easy_env = VecMonitor(venv=easy_env, filename=None, keep_buf=100)
+        self.easy_env = VecNormalize(venv=easy_env, ob=False)
 
         hard_config_path = config_dir / 'test_hard_config.json'
         hard_config = copy.copy(BossfightHardConfig)
@@ -62,85 +57,48 @@ class TestRunner:
         full_env = VecMonitor(venv=full_env, filename=None, keep_buf=100)
         self.full_env = VecNormalize(venv=full_env, ob=False)
 
-        self.states = self.model.adr_initial_state
+    def run(self) -> Tuple[float, float, float]:
+        easy_rewards = self.run_env(self.easy_env)
+        easy_mean_rew = safemean(easy_rewards)
+        
+        hard_rewards = self.run_env(self.hard_env)
+        hard_mean_rew = safemean(hard_rewards)
+        
+        full_rewards = self.run_env(self.full_env)
+        full_mean_rew = safemean(full_rewards)
 
-    def run(self):
-        epinfobuf = deque(maxlen=100)
-        obs, returns, masks, actions, values, neglogpacs, states, epinfos = self.run_env(self.ez_env)
-        epinfobuf.extend(epinfos)
-        ez_rew = safemean([epinfo['r'] for epinfo in epinfobuf])
-        
-        obs, returns, masks, actions, values, neglogpacs, states, epinfos = self.run_env(self.hard_env)
-        epinfobuf.extend(epinfos)
-        hard_rew = safemean([epinfo['r'] for epinfo in epinfobuf])
-        
-        obs, returns, masks, actions, values, neglogpacs, states, epinfos = self.run_env(self.full_env)
-        epinfobuf.extend(epinfos)
-        full_rew = safemean([epinfo['r'] for epinfo in epinfobuf])
-        return ez_rew, hard_rew, full_rew
+        return easy_mean_rew, hard_mean_rew, full_mean_rew
     
-    def run_env(self, env):
-        # Here, we init the lists that will contain the mb of experiences
-        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
-        mb_states = copy.copy(self.model.adr_initial_state)
-        states = copy.copy(self.model.adr_initial_state)
-        epinfos = []
-        # For n in range number of steps
-        n_completed = 0
+    def run_env(self, env) -> np.ndarray:
+        states = self._model.adr_initial_state
         obs = env.reset()
         dones = [False]
+
+        epinfos = []
+
+        # For n in range number of steps
+        n_completed = 0
         while n_completed < self._n_trajectories:
-            # Given observations, get action value and neglopacs
+            # Given observations, get action value
             # We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
-            actions, values, states, neglogpacs = self.model.adr_step(obs, S=states, M=dones)
-            mb_obs.append(obs.copy())
-            mb_actions.append(actions)
-            mb_values.append(values)
-            mb_neglogpacs.append(neglogpacs)
-            mb_dones.append(dones)
+            actions, _, states, _ = self._model.adr_step(obs, S=states, M=dones)
 
             # Take actions in env and look the results
-            # Infos contains a ton of useful informations
+            # Info contains a ton of useful information
             obs[:], rewards, dones, infos = env.step(actions)
             for info in infos:
                 maybeepinfo = info.get('episode')
-                if maybeepinfo: epinfos.append(maybeepinfo)
-            mb_rewards.append(rewards)
+                if maybeepinfo:
+                    epinfos.append(maybeepinfo)
+
             if dones[0]:
                 n_completed += 1
-        #batch of steps to batch of rollouts
-        mb_obs = np.asarray(mb_obs, dtype=obs.dtype)
-        mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
-        mb_actions = np.asarray(mb_actions)
-        mb_values = np.asarray(mb_values, dtype=np.float32)
-        mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
-        mb_dones = np.asarray(mb_dones, dtype=np.bool)
-        last_values = self.model.adr_value(obs, S=states, M=dones)
 
-        # discount/bootstrap off value fn
-        mb_returns = np.zeros_like(mb_rewards)
-        mb_advs = np.zeros_like(mb_rewards)
-        lastgaelam = 0
-        nsteps = len(mb_dones)
-        for t in reversed(range(nsteps)):
-            if t == nsteps - 1:
-                nextnonterminal = 1.0 - dones
-                nextvalues = last_values
-            else:
-                nextnonterminal = 1.0 - mb_dones[t+1]
-                nextvalues = mb_values[t+1]
-            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_values[t]
-            mb_advs[t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
-        mb_returns = mb_advs + mb_values
-        return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)),
-            mb_states, epinfos)
-# obs, returns, masks, actions, values, neglogpacs, states = runner.run()
-def sf01(arr):
-    """
-    swap and then flatten axes 0 and 1
-    """
-    s = arr.shape
-    return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
+        # Get the mean of the returns for these trajectories and add them to the buffer.
+        episode_rewards = np.array([epinfo['r'] for epinfo in epinfos])
+
+        return episode_rewards
+
 
 # obs, returns, masks, actions, values, neglogpacs, states = runner.run()
 def sf01(arr):
@@ -149,5 +107,3 @@ def sf01(arr):
     """
     s = arr.shape
     return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
-
-

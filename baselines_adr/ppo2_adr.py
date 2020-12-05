@@ -93,11 +93,11 @@ def learn(network,
 
     gamma: float                      discounting factor
 
-    lmbda: float                        advantage estimation discounting factor (lambda in the paper)
+    lmbda: float                      advantage estimation discounting factor (lambda in the paper)
 
     log_interval: int                 number of timesteps between logging events
 
-    n_minibatches: int                 number of training minibatches per update. For recurrent policies,
+    n_minibatches: int                number of training minibatches per update. For recurrent policies,
                                       should be smaller or equal than number of environments run in parallel.
 
     n_optepochs: int                   number of training epochs per update
@@ -169,7 +169,7 @@ def learn(network,
     adr_runner = ADRRunner(model, train_domain_config, tunable_parameters, adr_config)
 
     # Instantiate the runner object for the test environments
-    test_runner = TestRunner(model, config_dir, adr_config.n_eval_trajectories, tunable_parameters, gamma=gamma, lam=lmbda)
+    test_runner = TestRunner(model, config_dir, adr_config.n_eval_trajectories, tunable_parameters)
 
     # Start total timer
     tfirststart = time.perf_counter()
@@ -250,7 +250,7 @@ def learn(network,
             fps = int(nbatch / (tnow - tstart))
 
             if update % log_interval == 0 or update == 1:
-                ez_rew, hard_rew, full_rew = test_runner.run()
+                easy_rew, hard_rew, full_rew = test_runner.run()
 
                 # Calculates if value function is a good predictor of the returns (ev > 1)
                 # or if it's just worse than predicting nothing (ev =< 0)
@@ -262,10 +262,9 @@ def learn(network,
                 logger.logkv("misc/explained_variance", float(ev))
                 logger.logkv('train_eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
                 logger.logkv('train_eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
-                logger.logkv('eprewmean_ez', ez_rew)
+                logger.logkv('eprewmean_easy', easy_rew)
                 logger.logkv('eprewmean_hard', hard_rew)
                 logger.logkv('eprewmean_full', full_rew)
-
 
                 if eval_env is not None:
                     logger.logkv('eval_eprewmean', safemean([epinfo['r'] for epinfo in eval_epinfobuf]))

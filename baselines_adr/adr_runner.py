@@ -1,15 +1,16 @@
-import pathlib
-import random
-from typing import Union, List, Tuple, Optional, Dict
+import copy
 import os
 import os.path as osp
+import pathlib
+import random
+from typing import Union, List, Tuple, Optional, Dict, Any
+
 import numpy as np
 import pandas as pd
+from baselines import logger
 from baselines.common.vec_env import VecExtractDictObs, VecMonitor, VecNormalize
 from procgen import ProcgenEnv
-from baselines import logger
 from procgen.domains import DomainConfig, BossfightHardConfig
-import copy
 
 Number = Union[int, float]
 
@@ -172,10 +173,9 @@ class ParameterRunner:
         # Initialize the performance buffers
         self._upper_performance_buffer, self._lower_performance_buffer = PerformanceBuffer(), PerformanceBuffer()
 
-        self._states = model.adr_initial_state
+        self._states = {'lower': model.adr_initial_state, 'upper': model.adr_initial_state}
         self._obs = self._env.reset()
         self._dones = [False]
-        self.hidden_state = None
 
     def evaluate_performance(self) -> Optional[Tuple[float, bool]]:
         """Main method for running the ADR algorithm
@@ -192,16 +192,18 @@ class ParameterRunner:
             lower = False
             value = self._env_parameter.upper_bound
             buffer = self._upper_performance_buffer
+            state_key = 'upper'
         else:
             lower = True
             value = self._env_parameter.lower_bound
             buffer = self._lower_performance_buffer
+            state_key = 'lower'
 
         updated_params['min_' + self._param_name] = value
         updated_params['max_' + self._param_name] = value
         self._boundary_config.update_parameters(updated_params, cache=False)
 
-        self._generate_trajectories(buffer)
+        self._states[state_key] = self._generate_trajectories(buffer, self._states[state_key])
 
         if buffer.is_full(self._max_buffer_size):
             performance = buffer.calculate_average_performance()
@@ -210,24 +212,47 @@ class ParameterRunner:
         return None
 
     def increase_lower_bound(self) -> Number:
+        """Increase the lower bound and reset the hidden state
+        """
         self._env_parameter.increase_lower_bound()
+        self._states['lower'] = self._model.adr_initial_state
+
         return self._env_parameter.lower_bound
 
     def decrease_lower_bound(self) -> Number:
+        """Decrease the lower bound and reset the hidden state
+        """
         self._env_parameter.decrease_lower_bound()
+        self._states['lower'] = self._model.adr_initial_state
+
         return self._env_parameter.lower_bound
 
     def increase_upper_bound(self) -> Number:
+        """Increase the upper bound and reset the hidden state
+        """
         self._env_parameter.increase_upper_bound()
+        self._states['upper'] = self._model.adr_initial_state
+
         return self._env_parameter.upper_bound
 
     def decrease_upper_bound(self) -> Number:
+        """Decrease the upper bound and reset the hidden state
+        """
         self._env_parameter.decrease_upper_bound()
+        self._states['upper'] = self._model.adr_initial_state
+
         return self._env_parameter.upper_bound
 
-    def _generate_trajectories(self, buffer: PerformanceBuffer):
-        # Here, we init the lists that will contain the mb of experiences
-        mb_rewards, mb_values, mb_dones = [], [], []
+    def _generate_trajectories(self, buffer: PerformanceBuffer, states) -> Any:
+        """Generate trajectories for evaluated the model's performance on boundary sampled parameter
+
+        Args:
+            buffer: buffer to append performance to
+            states: hidden state for the recurrent policy
+
+        Returns:
+            New hidden state for the recurrent policy to use for next performance evaluation
+        """
         epinfos = []
 
         # For n in range number of steps
@@ -235,9 +260,7 @@ class ParameterRunner:
         while n_completed < self._n_trajectories:
             # Given observations, get action value
             # We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
-            actions, values, self._states, _ = self._model.adr_step(self._obs, S=self._states, M=self._dones)
-            mb_values.append(values)
-            mb_dones.append(self._dones)
+            actions, _, states, _ = self._model.adr_step(self._obs, S=states, M=self._dones)
 
             # Take actions in env and look the results
             # Info contains a ton of useful information
@@ -247,36 +270,14 @@ class ParameterRunner:
                 if maybeepinfo:
                     epinfos.append(maybeepinfo)
 
-            mb_rewards.append(rewards)
-
             if self._dones[0]:
                 n_completed += 1
 
-        # batch of steps to batch of rollouts
-        mb_values = np.asarray(mb_values, dtype=np.float32)
-        mb_dones = np.asarray(mb_dones, dtype=np.bool)
-        last_values = self._model.adr_value(self._obs, S=self._states, M=self._dones)
-
-        # discount/bootstrap off value fn
-        mb_advs = np.zeros_like(mb_rewards)
-        lastgaelam = 0
-        n_steps = len(mb_dones)
-        for t in reversed(range(n_steps)):
-            if t == n_steps - 1:
-                nextnonterminal = 1.0 - self._dones
-                nextvalues = last_values
-
-            else:
-                nextnonterminal = 1.0 - mb_dones[t + 1]
-                nextvalues = mb_values[t + 1]
-
-            delta = mb_rewards[t] + self._gamma * nextvalues * nextnonterminal - mb_values[t]
-            mb_advs[t] = lastgaelam = delta + self._gamma * self._lambda * nextnonterminal * lastgaelam
-
-        mb_returns = mb_advs + mb_values
-
         # Get the mean of the returns for these trajectories and add them to the buffer.
-        buffer.push_back(np.mean(mb_returns, axis=0).item())
+        episode_rewards = np.array([epinfo['r'] for epinfo in epinfos])
+        buffer.push_back(safemean(episode_rewards))
+
+        return states
 
     def get_clip_boundaries(self):
         return self._env_parameter.clip_lower_bound, self._env_parameter.clip_upper_bound
@@ -286,14 +287,6 @@ class ParameterRunner:
 
 
 class ADRRunner:
-    """
-    We use this object to make a mini batch of experiences
-    __init__:
-    - Initialize the runner
-
-    run():
-    - Make a mini batch
-    """
 
     _tunable_param_names: List[str]
 
@@ -331,6 +324,7 @@ class ADRRunner:
         param_runner = self._param_runners[param_name]
         info = param_runner.evaluate_performance()
         old_value_low, old_value_upper = param_runner.get_values()
+
         # If we get something back, then the performance buffer for either the lower or upper boundary of the parameter
         # is filled. Update the parameter according to the set thresholds.
         if info:

@@ -28,7 +28,7 @@ def train_fn(env_name: str,
              comm=None,
              save_interval: int = 1000,
              log_interval: int = 10,
-             recur: bool = False):
+             recur: bool = True):
 
     # Get the default ADR config if none is provided
     adr_config = ADRConfig() if adr_config is None else adr_config
@@ -147,12 +147,12 @@ def train_fn(env_name: str,
 def main():
     parser = argparse.ArgumentParser(description='Process procgen training arguments.')
     parser.add_argument('--env_name', type=str, default='dc_bossfight')
-    parser.add_argument('--n_train_envs', type=int, default=2)
+    parser.add_argument('--n_train_envs', type=int, default=8)
     parser.add_argument('--n_training_steps', type=int, default=200000000)
     parser.add_argument('--test_worker_interval', type=int, default=0)
     parser.add_argument('--log_dir', type=str, default=None)
     parser.add_argument('--save_interval', type=int, default=1000)
-    parser.add_argument('--recur', type=bool, default=False)
+    parser.add_argument('--recur', type=bool, default=True)
 
     args = parser.parse_args()
 
