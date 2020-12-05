@@ -101,7 +101,7 @@ class ADRConfig:
                  max_buffer_size: int = 7,
                  gamma: float = .999,
                  lmbda: float = .95,
-                 performance_thresholds: Tuple[float, float] = (8., 10.),
+                 performance_thresholds: Tuple[float, float] = (6., 9.),
                  upper_sample_prob: float = .8,
                  use_gae: bool = True):
 
@@ -295,7 +295,7 @@ class ADRRunner:
     def __init__(self, model, initial_domain_config: DomainConfig, tunable_parameters: List[EnvironmentParameter],
                  adr_config: ADRConfig = None):
 
-        self.model = model
+        self._model = model
         self._train_domain_config = initial_domain_config
         train_config_path = initial_domain_config.path
 
@@ -360,7 +360,7 @@ class ADRRunner:
                 os.makedirs(checkdir, exist_ok=True)
                 savepath = osp.join(checkdir, '%.5i.ckpt' % update_iter)
                 print('Saving to', savepath)
-                self.model.save(savepath)
+                self._model.save(savepath)
                 config_savepath = osp.join(checkdir, '%.5i.json' % update_iter)
                 self._train_domain_config.to_json(config_savepath)
 
