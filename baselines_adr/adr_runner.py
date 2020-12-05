@@ -226,8 +226,9 @@ class ParameterRunner:
         return self._env_parameter.upper_bound
 
     def _generate_trajectories(self, buffer: PerformanceBuffer):
-        # Here, we init the list of rewards
-        mb_rewards = []
+        # Here, we init the lists that will contain the mb of experiences
+        mb_rewards, mb_values, mb_dones = [], [], []
+        epinfos = []
 
         # For n in range number of steps
         n_completed = 0
@@ -235,20 +236,47 @@ class ParameterRunner:
             # Given observations, get action value
             # We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
             actions, values, self._states, _ = self._model.adr_step(self._obs, S=self._states, M=self._dones)
+            mb_values.append(values)
+            mb_dones.append(self._dones)
 
             # Take actions in env and look the results
             # Info contains a ton of useful information
-            self._obs[:], rewards, self._dones, _ = self._env.step(actions)
+            self._obs[:], rewards, self._dones, infos = self._env.step(actions)
+            for info in infos:
+                maybeepinfo = info.get('episode')
+                if maybeepinfo:
+                    epinfos.append(maybeepinfo)
 
             mb_rewards.append(rewards)
 
             if self._dones[0]:
                 n_completed += 1
 
-        mb_rewards = np.array(mb_rewards)
+        # batch of steps to batch of rollouts
+        mb_values = np.asarray(mb_values, dtype=np.float32)
+        mb_dones = np.asarray(mb_dones, dtype=np.bool)
+        last_values = self._model.adr_value(self._obs, S=self._states, M=self._dones)
+
+        # discount/bootstrap off value fn
+        mb_advs = np.zeros_like(mb_rewards)
+        lastgaelam = 0
+        n_steps = len(mb_dones)
+        for t in reversed(range(n_steps)):
+            if t == n_steps - 1:
+                nextnonterminal = 1.0 - self._dones
+                nextvalues = last_values
+
+            else:
+                nextnonterminal = 1.0 - mb_dones[t + 1]
+                nextvalues = mb_values[t + 1]
+
+            delta = mb_rewards[t] + self._gamma * nextvalues * nextnonterminal - mb_values[t]
+            mb_advs[t] = lastgaelam = delta + self._gamma * self._lambda * nextnonterminal * lastgaelam
+
+        mb_returns = mb_advs + mb_values
 
         # Get the mean of the returns for these trajectories and add them to the buffer.
-        buffer.push_back(safemean(mb_rewards))
+        buffer.push_back(np.mean(mb_returns, axis=0).item())
 
     def get_clip_boundaries(self):
         return self._env_parameter.clip_lower_bound, self._env_parameter.clip_upper_bound

@@ -169,7 +169,7 @@ def learn(network,
     adr_runner = ADRRunner(model, train_domain_config, tunable_parameters, adr_config)
 
     # Instantiate the runner object for the test environments
-    test_runner = TestRunner(model, config_dir, adr_config.n_eval_trajectories, tunable_parameters)
+    test_runner = TestRunner(model, config_dir, adr_config.n_eval_trajectories, tunable_parameters, gamma=gamma, lam=lmbda)
 
     # Start total timer
     tfirststart = time.perf_counter()
