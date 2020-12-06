@@ -101,7 +101,7 @@ class ADRConfig:
                  max_buffer_size: int = 7,
                  gamma: float = .999,
                  lmbda: float = .95,
-                 performance_thresholds: Tuple[float, float] = (6., 9.),
+                 performance_thresholds: Tuple[float, float] = (6., 10.),
                  upper_sample_prob: float = .8,
                  use_gae: bool = True):
 
