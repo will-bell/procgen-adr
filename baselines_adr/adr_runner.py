@@ -50,12 +50,12 @@ class EnvironmentParameter:
 
 DEFAULT_TUNABLE_PARAMS = {
     'dc_bossfight': [
-        EnvironmentParameter(name='n_barriers', initial_bounds=(1, 1), clip_bounds=(1, 5), delta=1, discrete=True),
-        EnvironmentParameter(name='boss_round_health', initial_bounds=(1, 1), clip_bounds=(1, 50), delta=1, discrete=True),
-        EnvironmentParameter(name='boss_invulnerable_duration', initial_bounds=(1, 1), clip_bounds=(1, 10), delta=1, discrete=True),
-        EnvironmentParameter(name='boss_bullet_velocity', initial_bounds=(.3, .3), clip_bounds=(.3, 1.), delta=.1, discrete=False),
-        EnvironmentParameter(name='boss_rand_fire_prob', initial_bounds=(.05, .05), clip_bounds=(.05, .5), delta=.05, discrete=False),
-        EnvironmentParameter(name='boss_scale', initial_bounds=(1., 1.), clip_bounds=(.5, 1.), delta=.1, discrete=False)
+        EnvironmentParameter(name='n_barriers', initial_bounds=(3, 3), clip_bounds=(1, 5), delta=1, discrete=True),
+        EnvironmentParameter(name='boss_round_health', initial_bounds=(5, 5), clip_bounds=(3, 9), delta=1, discrete=True),
+        EnvironmentParameter(name='boss_invulnerable_duration', initial_bounds=(4, 4), clip_bounds=(2, 8), delta=1, discrete=True),
+        EnvironmentParameter(name='boss_bullet_velocity', initial_bounds=(.75, .75), clip_bounds=(.5, 1.), delta=.05, discrete=False),
+        EnvironmentParameter(name='boss_rand_fire_prob', initial_bounds=(.1, .1), clip_bounds=(.05, .3), delta=.025, discrete=False),
+        EnvironmentParameter(name='boss_scale', initial_bounds=(1., 1.), clip_bounds=(.5, 1.), delta=.05, discrete=False)
     ]
 }
 
@@ -101,7 +101,7 @@ class ADRConfig:
                  max_buffer_size: int = 7,
                  gamma: float = .999,
                  lmbda: float = .95,
-                 performance_thresholds: Tuple[float, float] = (6., 10.),
+                 performance_thresholds: Tuple[float, float] = (6., 9.),
                  upper_sample_prob: float = .8,
                  use_gae: bool = True):
 
