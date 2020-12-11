@@ -1,0 +1,18 @@
+{
+"game": "dc_bossfight", 
+"min_n_rounds": 3,
+ "max_n_rounds": 3,
+ "min_n_barriers": 5,
+ "max_n_barriers": 5,
+ "min_boss_round_health": 3,
+ "max_boss_round_health": 3,
+ "min_boss_invulnerable_duration": 2,
+ "max_boss_invulnerable_duration": 2,
+ "n_boss_attack_modes": 4,
+ "min_boss_bullet_velocity": 0.5,
+ "max_boss_bullet_velocity": 0.5,
+ "min_boss_rand_fire_prob": 0.05,
+ "max_boss_rand_fire_prob": 0.05,
+ "min_boss_scale": 0.7,
+ "max_boss_scale": 0.7
+}
