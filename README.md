@@ -1,12 +1,13 @@
 # procgen-adr
 
 Procgen ADR is a python implementation of Automatic Domain Randomization by [Open AI](https://openai.com/blog/solving-rubiks-cube/)
+
 Team Members include: William Bell (wjbell@bu.edu), Tu Timmy Hoang (hoangt@bu.edu), David McIntyre (dpmc@bu.edu), Danny Trinh (djtrinh@bu.edu)
 
 ## Installation
 
-We created a fork of OpenAI's baselines which have useful reinforcement learning modules. We specifically use PPO and impala CNN.
-In the fork we have also updated the repo to be compatibile with TensorFlow 2.0.0.
+We created a fork of OpenAI's baselines which have useful reinforcement learning modules. We specifically use PPO and Impala CNN.
+In the fork we updated the repo to be compatible with TensorFlow 2.0.0.
 Install from source:
 [https://github.com/tuthoang/baselines](https://github.com/tuthoang/baselines)
 
