@@ -1,8 +1,13 @@
+import copy
+import os
+import os.path as osp
 import pathlib
 import random
-from typing import Union, List, Tuple, Optional, Dict
+from typing import Union, List, Tuple, Optional, Dict, Any
 
 import numpy as np
+import pandas as pd
+from baselines import logger
 from baselines.common.vec_env import VecExtractDictObs, VecMonitor, VecNormalize
 from procgen import ProcgenEnv
 from procgen.domains import DomainConfig, BossfightHardConfig
@@ -10,7 +15,7 @@ from procgen.domains import DomainConfig, BossfightHardConfig
 Number = Union[int, float]
 
 DEFAULT_DOMAIN_CONFIGS = {
-    'dc_bossfight': BossfightHardConfig
+    'dc_bossfight': copy.copy(BossfightHardConfig)
 }
 
 
@@ -25,12 +30,13 @@ class EnvironmentParameter:
                  delta: Number, discrete: bool):
         self.name = name
         self.lower_bound, self.upper_bound = initial_bounds
+        self.initial_lower_bound, self.initial_upper_bound = initial_bounds
         self.clip_lower_bound, self.clip_upper_bound = clip_bounds
         self.discrete = discrete
         self.delta = delta
-
+        
     def increase_lower_bound(self):
-        self.lower_bound = min(self.lower_bound + self.delta, self.upper_bound)
+        self.lower_bound = min(self.lower_bound + self.delta, self.initial_lower_bound)
 
     def decrease_lower_bound(self):
         self.lower_bound = max(self.lower_bound - self.delta, self.clip_lower_bound)
@@ -39,18 +45,17 @@ class EnvironmentParameter:
         self.upper_bound = min(self.upper_bound + self.delta, self.clip_upper_bound)
 
     def decrease_upper_bound(self):
-        self.upper_bound = max(self.upper_bound - self.delta, self.lower_bound)
+        self.upper_bound = max(self.upper_bound - self.delta, self.initial_upper_bound)
 
 
 DEFAULT_TUNABLE_PARAMS = {
     'dc_bossfight': [
-        EnvironmentParameter(name='n_rounds', initial_bounds=(1, 1), clip_bounds=(1, 25), delta=1, discrete=True),
-        EnvironmentParameter(name='n_barriers', initial_bounds=(1, 1), clip_bounds=(1, 5), delta=1, discrete=True),
-        EnvironmentParameter(name='boss_round_health', initial_bounds=(1, 1), clip_bounds=(1, 50), delta=1, discrete=True),
-        EnvironmentParameter(name='boss_invulnerable_duration', initial_bounds=(1, 1), clip_bounds=(1, 10), delta=1, discrete=True),
-        EnvironmentParameter(name='boss_bullet_velocity', initial_bounds=(.3, .3), clip_bounds=(.3, 1.), delta=.1, discrete=False),
-        EnvironmentParameter(name='boss_rand_fire_prob', initial_bounds=(.05, .05), clip_bounds=(.05, .5), delta=.05, discrete=False),
-        EnvironmentParameter(name='boss_scale', initial_bounds=(1., 1.), clip_bounds=(.5, 1.), delta=.1, discrete=False)
+        EnvironmentParameter(name='n_barriers', initial_bounds=(3, 3), clip_bounds=(1, 5), delta=1, discrete=True),
+        EnvironmentParameter(name='boss_round_health', initial_bounds=(5, 5), clip_bounds=(3, 9), delta=1, discrete=True),
+        EnvironmentParameter(name='boss_invulnerable_duration', initial_bounds=(4, 4), clip_bounds=(2, 8), delta=1, discrete=True),
+        EnvironmentParameter(name='boss_bullet_velocity', initial_bounds=(.75, .75), clip_bounds=(.5, 1.), delta=.05, discrete=False),
+        EnvironmentParameter(name='boss_rand_fire_prob', initial_bounds=(.1, .1), clip_bounds=(.05, .3), delta=.025, discrete=False),
+        EnvironmentParameter(name='boss_scale', initial_bounds=(1., 1.), clip_bounds=(.5, 1.), delta=.05, discrete=False)
     ]
 }
 
@@ -93,10 +98,10 @@ class ADRConfig:
 
     def __init__(self,
                  n_eval_trajectories: int = 10,
-                 max_buffer_size: int = 100,
+                 max_buffer_size: int = 7,
                  gamma: float = .999,
                  lmbda: float = .95,
-                 performance_thresholds: Tuple[float, float] = (2.5, 6.),
+                 performance_thresholds: Tuple[float, float] = (6., 9.),
                  upper_sample_prob: float = .8,
                  use_gae: bool = True):
 
@@ -107,6 +112,10 @@ class ADRConfig:
         self.performance_thresholds = performance_thresholds
         self.upper_sample_prob = upper_sample_prob
         self.use_gae = use_gae
+
+
+def safemean(xs: np.ndarray) -> float:
+    return np.nan if len(xs) == 0 else np.mean(xs).item()
 
 
 class ParameterRunner:
@@ -164,10 +173,9 @@ class ParameterRunner:
         # Initialize the performance buffers
         self._upper_performance_buffer, self._lower_performance_buffer = PerformanceBuffer(), PerformanceBuffer()
 
-        self._states = model.initial_state
+        self._states = {'lower': model.adr_initial_state, 'upper': model.adr_initial_state}
         self._obs = self._env.reset()
         self._dones = [False]
-        self.hidden_state = None
 
     def evaluate_performance(self) -> Optional[Tuple[float, bool]]:
         """Main method for running the ADR algorithm
@@ -184,16 +192,18 @@ class ParameterRunner:
             lower = False
             value = self._env_parameter.upper_bound
             buffer = self._upper_performance_buffer
+            state_key = 'upper'
         else:
             lower = True
             value = self._env_parameter.lower_bound
             buffer = self._lower_performance_buffer
+            state_key = 'lower'
 
         updated_params['min_' + self._param_name] = value
         updated_params['max_' + self._param_name] = value
         self._boundary_config.update_parameters(updated_params, cache=False)
 
-        self._generate_trajectories(buffer)
+        self._states[state_key] = self._generate_trajectories(buffer, self._states[state_key])
 
         if buffer.is_full(self._max_buffer_size):
             performance = buffer.calculate_average_performance()
@@ -202,24 +212,47 @@ class ParameterRunner:
         return None
 
     def increase_lower_bound(self) -> Number:
+        """Increase the lower bound and reset the hidden state
+        """
         self._env_parameter.increase_lower_bound()
+        self._states['lower'] = self._model.adr_initial_state
+
         return self._env_parameter.lower_bound
 
     def decrease_lower_bound(self) -> Number:
+        """Decrease the lower bound and reset the hidden state
+        """
         self._env_parameter.decrease_lower_bound()
+        self._states['lower'] = self._model.adr_initial_state
+
         return self._env_parameter.lower_bound
 
     def increase_upper_bound(self) -> Number:
+        """Increase the upper bound and reset the hidden state
+        """
         self._env_parameter.increase_upper_bound()
+        self._states['upper'] = self._model.adr_initial_state
+
         return self._env_parameter.upper_bound
 
     def decrease_upper_bound(self) -> Number:
+        """Decrease the upper bound and reset the hidden state
+        """
         self._env_parameter.decrease_upper_bound()
+        self._states['upper'] = self._model.adr_initial_state
+
         return self._env_parameter.upper_bound
 
-    def _generate_trajectories(self, buffer: PerformanceBuffer):
-        # Here, we init the lists that will contain the mb of experiences
-        mb_rewards, mb_values, mb_dones = [], [], []
+    def _generate_trajectories(self, buffer: PerformanceBuffer, states) -> Any:
+        """Generate trajectories for evaluated the model's performance on boundary sampled parameter
+
+        Args:
+            buffer: buffer to append performance to
+            states: hidden state for the recurrent policy
+
+        Returns:
+            New hidden state for the recurrent policy to use for next performance evaluation
+        """
         epinfos = []
 
         # For n in range number of steps
@@ -227,9 +260,7 @@ class ParameterRunner:
         while n_completed < self._n_trajectories:
             # Given observations, get action value
             # We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
-            actions, values, self._states, _ = self._model.adr_step(self._obs, S=self._states, M=self._dones)
-            mb_values.append(values)
-            mb_dones.append(self._dones)
+            actions, _, states, _ = self._model.adr_step(self._obs, S=states, M=self._dones)
 
             # Take actions in env and look the results
             # Info contains a ton of useful information
@@ -239,47 +270,23 @@ class ParameterRunner:
                 if maybeepinfo:
                     epinfos.append(maybeepinfo)
 
-            mb_rewards.append(rewards)
-
             if self._dones[0]:
                 n_completed += 1
 
-        # batch of steps to batch of rollouts
-        mb_values = np.asarray(mb_values, dtype=np.float32)
-        mb_dones = np.asarray(mb_dones, dtype=np.bool)
-        last_values = self._model.adr_value(self._obs, S=self._states, M=self._dones)
-
-        # discount/bootstrap off value fn
-        mb_advs = np.zeros_like(mb_rewards)
-        lastgaelam = 0
-        n_steps = len(mb_dones)
-        for t in reversed(range(n_steps)):
-            if t == n_steps - 1:
-                nextnonterminal = 1.0 - self._dones
-                nextvalues = last_values
-
-            else:
-                nextnonterminal = 1.0 - mb_dones[t + 1]
-                nextvalues = mb_values[t + 1]
-
-            delta = mb_rewards[t] + self._gamma * nextvalues * nextnonterminal - mb_values[t]
-            mb_advs[t] = lastgaelam = delta + self._gamma * self._lambda * nextnonterminal * lastgaelam
-
-        mb_returns = mb_advs + mb_values
-
         # Get the mean of the returns for these trajectories and add them to the buffer.
-        buffer.push_back(np.mean(mb_returns, axis=0).item())
+        episode_rewards = np.array([epinfo['r'] for epinfo in epinfos])
+        buffer.push_back(safemean(episode_rewards))
+
+        return states
+
+    def get_clip_boundaries(self):
+        return self._env_parameter.clip_lower_bound, self._env_parameter.clip_upper_bound
+
+    def get_values(self):
+        return self._env_parameter.lower_bound, self._env_parameter.upper_bound
 
 
 class ADRRunner:
-    """
-    We use this object to make a mini batch of experiences
-    __init__:
-    - Initialize the runner
-
-    run():
-    - Make a mini batch
-    """
 
     _tunable_param_names: List[str]
 
@@ -288,6 +295,7 @@ class ADRRunner:
     def __init__(self, model, initial_domain_config: DomainConfig, tunable_parameters: List[EnvironmentParameter],
                  adr_config: ADRConfig = None):
 
+        self._model = model
         self._train_domain_config = initial_domain_config
         train_config_path = initial_domain_config.path
 
@@ -301,8 +309,11 @@ class ADRRunner:
         self._n_tunable_params = len(self._tunable_param_names)
 
         self._low_threshold, self._high_threshold = adr_config.performance_thresholds
+        
+        self.filename = f'adr_log.csv'
+        self.list_changes = []
 
-    def run(self):
+    def run(self, update_iter):
         # Randomly select a parameter to boundary sample
         param_idx = random.randint(0, self._n_tunable_params - 1)
         param_name = self._tunable_param_names[param_idx]
@@ -312,14 +323,18 @@ class ADRRunner:
         # performance in the environment.
         param_runner = self._param_runners[param_name]
         info = param_runner.evaluate_performance()
+        old_value_low, old_value_upper = param_runner.get_values()
 
         # If we get something back, then the performance buffer for either the lower or upper boundary of the parameter
         # is filled. Update the parameter according to the set thresholds.
         if info:
             performance, lower = info
             new_value = None
+            selected_bound = None
             if lower:  # Updating the lower boundary according to set performance thresholds
                 prefix = 'min_'
+                selected_bound = 'lower'
+                old_value, other_value = old_value_low, old_value_upper
                 if performance >= self._high_threshold:   # Increase entropy
                     # TODO: Log change
                     new_value = param_runner.decrease_lower_bound()
@@ -329,6 +344,8 @@ class ADRRunner:
 
             else:  # Updating the upper boundary according to set performance thresholds
                 prefix = 'max_'
+                selected_bound = 'upper'
+                old_value, other_value = old_value_upper, old_value_low
                 if performance >= self._high_threshold:   # Increase entropy
                     # TODO: Log change
                     new_value = param_runner.increase_upper_bound()
@@ -339,4 +356,68 @@ class ADRRunner:
             # Update the config for the training environment with the new value for the boundary-sampled parameter if
             # we got a new value.
             if new_value is not None:
+                checkdir = osp.join(logger.get_dir(), 'checkpoints')
+                os.makedirs(checkdir, exist_ok=True)
+                savepath = osp.join(checkdir, '%.5i.ckpt' % update_iter)
+                print('Saving to', savepath)
+                self._model.save(savepath)
+                config_savepath = osp.join(checkdir, '%.5i.json' % update_iter)
+                self._train_domain_config.to_json(config_savepath)
+
+                logger.info(f"Saving model to {savepath}")
+                logger.info(f"Saving config to {config_savepath}")
+
+                entropy = self.adr_entropy()
+                logger.info(f"ADR Entropy to {entropy}")
+                
+                min_clip, max_clip = param_runner.get_clip_boundaries()
+                self.list_changes.append([update_iter, prefix, param_name, selected_bound, performance, 
+                                          old_value, new_value, other_value, entropy, self._low_threshold,
+                                          self._high_threshold, min_clip, max_clip])
+                
+                log_df = pd.DataFrame(self.list_changes, 
+                                      columns=[
+                                          'update_iter',
+                                          'prefix',
+                                          'param_name',
+                                          'selected_bound',
+                                          'performance',
+                                          'old_value',
+                                          'new_value',
+                                          'other_bound_value',
+                                          'adr_entropy',
+                                          'low_perf_thresh',
+                                          'high_perf_thresh',
+                                          'min_clip',
+                                          'max_clip'])
+                log_df_savepath = os.path.join(logger.get_dir(), self.filename)
+                log_df.to_csv(log_df_savepath, encoding='utf-8', index=False)
+
                 self._train_domain_config.update_parameters({prefix + param_name: new_value})
+                self.save_adr_params()
+                
+    def adr_entropy(self):
+        """ Calculate ADR Entropy
+
+        Returns:
+            float: entropy =  1/d \sum_{i=1}^{d} log(phi_ih - phi_il)
+        """
+
+        differences = []
+        for param_runner in self._param_runners.values():
+            phi_l, phi_h = param_runner.get_values()
+
+            differences.append(np.log(phi_h - phi_l))
+
+        entropy = np.mean(differences)
+        return entropy
+    
+    def save_adr_params(self):
+        savepath = osp.join(logger.get_dir(), 'adr_params.csv')
+        l = []
+        for name, param_runner in self._param_runners.items():
+            phi_l, phi_h = param_runner.get_values()
+
+            l.append([name, phi_l, phi_h])
+        df = pd.DataFrame(l, columns=['param_name', 'phi_l', 'phi_h'])
+        df.to_csv(savepath, encoding='utf-8', index=False)

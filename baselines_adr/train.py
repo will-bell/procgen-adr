@@ -1,9 +1,12 @@
+import os, sys # Windows workaround to importing baselines_adr
+sys.path.append(os.path.curdir)
+
 import argparse
 import pathlib
 
 import tensorflow.compat.v1 as tf
 from baselines import logger
-from baselines.common.models import build_impala_cnn
+from baselines.common.models import build_impala_cnn, cnn_lstm, impala_cnn_lstm, cnn_lnlstm
 from baselines.common.mpi_util import setup_mpi_gpus
 from baselines.common.vec_env import VecExtractDictObs, VecMonitor, VecNormalize
 from mpi4py import MPI
@@ -23,8 +26,9 @@ def train_fn(env_name: str,
              log_dir: str = None,
              is_test_worker: bool = False,
              comm=None,
-             save_interval: int = 0,
-             log_interval: int = 10):
+             save_interval: int = 1000,
+             log_interval: int = 20,
+             recur: bool = True):
 
     # Get the default ADR config if none is provided
     adr_config = ADRConfig() if adr_config is None else adr_config
@@ -73,6 +77,14 @@ def train_fn(env_name: str,
         format_strs = ['csv', 'stdout'] if log_comm.Get_rank() == 0 else []
         logger.configure(comm=log_comm, dir=str(log_dir), format_strs=format_strs)
 
+    logger.info(f'env_name: {env_name}')
+    logger.info(f'num_train_envs: {num_train_envs}')
+    logger.info(f'n_training_steps: {n_training_steps}')
+    logger.info(f'experiment_dir: {experiment_dir}')
+    logger.info(f'tunable_params_config_path: {tunable_params_config_path}')
+    logger.info(f'log_dir: {log_dir}')
+    logger.info(f'save_interval: {save_interval}')
+
     n_steps = 256
     ent_coef = .01
     lr = 5e-4
@@ -103,11 +115,16 @@ def train_fn(env_name: str,
     def conv_fn(x):
         return build_impala_cnn(x, depths=[16, 32, 32], emb_size=256)
 
+    if recur:
+        logger.info("Using CNN LSTM")
+        conv_fn = cnn_lstm(nlstm=256, conv_fn=conv_fn)
+    
     logger.info('training')
     ppo2_adr.learn(
         conv_fn,
         training_env,
         n_training_steps,
+        config_dir,
         adr_config,
         train_domain_config,
         tunable_params,
@@ -130,9 +147,12 @@ def train_fn(env_name: str,
 def main():
     parser = argparse.ArgumentParser(description='Process procgen training arguments.')
     parser.add_argument('--env_name', type=str, default='dc_bossfight')
-    parser.add_argument('--n_train_envs', type=int, default=2)
-    parser.add_argument('--n_training_steps', type=int, default=20_000_000)
+    parser.add_argument('--n_train_envs', type=int, default=8)
+    parser.add_argument('--n_training_steps', type=int, default=200000000)
     parser.add_argument('--test_worker_interval', type=int, default=0)
+    parser.add_argument('--log_dir', type=str, default=None)
+    parser.add_argument('--save_interval', type=int, default=1000)
+    parser.add_argument('--recur', type=bool, default=True)
 
     args = parser.parse_args()
 
@@ -150,7 +170,10 @@ def main():
         args.n_train_envs,
         args.n_training_steps,
         is_test_worker=is_test_worker,
-        comm=comm)
+        comm=comm,
+        log_dir=args.log_dir,
+        save_interval=args.save_interval,
+        recur=args.recur)
 
 
 if __name__ == '__main__':
